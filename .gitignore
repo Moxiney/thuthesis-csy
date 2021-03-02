@@ -11,3 +11,6 @@
 *.synctex.gz
 *.xdv
 *.toc
+
+# vscode
+.vscode/
