@@ -1,0 +1,200 @@
+% !TeX root = ../thuthesis-caishiyu.tex
+
+\chapter{垃圾回收机制设计}
+
+\section{本章概述}
+
+对于数据库而言，随着运行时间的增加，系统中冗余的数据也在增加，因此需要对于冗余的数据进行回收，以提高系统运行的性能。对于采用 MVCC 的数据库而言，回收更加重要。因为 MVCC 的事务在执行的时候，会创造出很多的版本以此降低读写冲突的可能性。但是这些版本会增长版本链的长度，因此会降低事务访问的性能。所以对于 MVCC 数据库而言，有效率地回收至关重要。
+
+通常而言，数据库回收策略设计的目的有二个：
+
+1. 将对于其他运行时的事务不可见的版本，行，表格回收，为系统节约空间，防止 NVM 存储空间溢出。
+2. 当空间可以回收时，保证其他任何运行的事务及之后的事务不会访问到正在被回收的空间。
+
+对于 NVM 上的无日志数据库而言，回收策略的设计上有以下挑战：
+
+- 为了多线程能够无锁地进行事务操作以及回收，则需要针对 MVCC 版本链数据结构进行部分修改，以能够记录更多的信息可以保证一致性以及防止重复回收。
+- 不同于内存数据结构，我们设计的数据库的所有信息均处于 NVM 介质上。因此任何版本链上面的数据都需要持久化，而且在不依赖日志的前提下，事务和回收对于数据操作的持久化的内容以及内容持久化的顺序就需要谨慎考虑，以防止不同线程访问到不一致的信息。
+
+
+
+垃圾回收的场景主要可以分为两个类别。一是在运行时的垃圾回收，用于回收逻辑上不可见，物理上不会被访问到的数据结构。二是在系统重启恢复时的垃圾回收，用于回收未被使用的空间。
+
+两种情景下的垃圾回收机制都与数据库的并发控制算法息息相关。
+因此章节~\ref{sec:mvcc} 先介绍了存储引擎所使用的并发控制算法。该章节会着重介绍在保证数据结构的崩溃一致性的前提下指令顺序的设计。
+之后章节~\ref{sec:space} 会从宏观层面介绍在运行过程以及数据恢复过程中不可见数据的判断方式。
+章节~\ref{sec:time} 会解释垃圾回收的正确的时机。
+最后章节~\ref{sec:implement} 详细地介绍垃圾回收的流程，以及具体的相关数据结构设计，并且解释了垃圾回收机制如何保证多线程编程的正确性的。
+
+\section{多版本并发控制算法}
+\label{sec:mvcc}
+本章节介绍了事务在运行时的 4 个基本操作（读、插入、更新以及删除）的流程，以及事务提交和中止的流程。
+
+
+垃圾回收策略设计与并发控制算法以及存储方式是高度耦合的。下面简要介绍多版本并发控制算法。
+事务在读、插入以及更新时均需要遍历访问版本链，找到对于该事务而言可见的版本。
+
+图~\ref{fig:version-visibility} 中展示事务的版本可见性判断策略。对于一个事务而言，别的事务是否已经结束的判断标准在于别的事务是否在该事务的快照中。而别的事务提交还是中止的判断方法则是通过访问事务状态数组得到对应的事务状态来判断。
+版本的可见性判断策略可以分为主要两步：（1）该版本的创建事务已经结束且提交了，否则访问事务不应该看到该版本，即该版本对于访问事务不可见。（2）如果该版本尚未被销毁，则该版本对于访问事务是可见的。
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{版本可见性的判断流程图}
+    \label{fig:version-visibility}
+\end{figure}
+
+算法~\ref{alg:traverse_version_chain} 中展示了访问版本链的流程。事务会先判断 head 是否合法，即 head 的最新版本不为空且该记录尚未被删除。之后事务会从新到旧遍历所有的版本，直到找到可见的版本。如果找不到可见的版本则会返回空指针。
+
+
+\begin{algorithm}[t]
+    \caption{事务访问版本链的方法 $access\_version$}
+    \label{alg:traverse_version_chain}
+    \KwIn{The accessed head, $h$\ Snapshot of the accesser.}
+    \KwOut{Visible version, $v$}
+    \BlankLine
+    \If{ $h$ is empty or $h$ is already deleted}{
+        return $nullptr$;
+    }
+
+    Set $v$ to the newest version of $h$;
+
+    \While{ $v$ is not $nullptr$ and $v$ is not visible according to snapshot}{
+        Set $v$ to the older version of $v$;
+    }
+
+    return $v$;
+
+\end{algorithm}
+
+接下来是事务的四种基本操作。
+
+\todo{把这部分补全}
+
+\begin{itemize}
+    \item[读]
+    \item[插入]
+    \item[更新]
+    \item[删除]
+\end{itemize}
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{提交事务所标记的可回收空间}
+    \label{fig:mvcc-read}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{提交事务所标记的可回收空间}
+    \label{fig:mvcc-insert}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{提交事务所标记的可回收空间}
+    \label{fig:mvcc-update}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{提交事务所标记的可回收空间}
+    \label{fig:mvcc-delete}
+\end{figure}
+
+
+
+\section{垃圾回收的对象}
+\label{sec:space}
+
+由于系统采用的是多版本并发控制算法，因此在系统运行的过程中，事务会不断创建新的版本，因此版本链的长度也会不断增加，进而影响到事务的运行的性能。因此回收版本链上的不可见版本至关重要。在本章节中，我们会介绍运行时以及恢复时可回收的空间的具体情况。
+
+\subsection{运行时垃圾回收的对象}
+
+事务在运行过程中会根据访问的版本信息标记可以回收的空间。当事务提交或者中止后会将可回收的空间信息传递给垃圾回收机制，由垃圾回收机制决定的回收的时机。运行时的可回收的空间根据事务提交或者中止可以分为两大种情况。
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{提交事务所标记的可回收空间}
+    \label{fig:space-commit}
+\end{figure}
+
+首先是提交事务的所标记的可回收空间。如图~\ref{fig:space-commit} 所示，有两种情况：（1） 当该事务进行更新操作时，会创建一个新的版本。因此当该事务提交之后，比所创建的版本更早的版本可被回收。(2) 事务删除某一条记录并且提交后，该记录所对应的整个版本链也可以被回收。 当该提交事务的影响被所有事务以及后续事务可见时，该事务所标记的空间就是不可见的。因此这些空间可以被回收。
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{中止事务所标记的可回收空间}
+    \label{fig:space-abort}
+\end{figure}
+
+其次是中止事务的所标记的可回收空间。如图~\ref{fig:space-abort}所示，同样有两种情况：（1） 一个事务进行了插入操作，当事务中止之后，因为插入操作所新增的版本链是可以被回收的。（2） 当事务更新了一个记录并且中止之后，所创建的新版本也是不可见的，因此也是可回收的。
+
+\subsection{恢复时垃圾回收的对象}
+
+系统在数据恢复的过程中同样也会标记可回收的空间。恢复时的可回收空间可以分为两类：（1）所有未被分配的数据结构均是可回收的。（2）上一轮运行中所标记的但是未被回收的空间也是可回收的。因为在系统宕机重启之后，上一次运行中的所有事务对于这次运行而言均是结束的。
+
+\section{垃圾回收的时机}
+\label{sec:time}
+
+\todo{把原先中止事务的回收时机的调整以及更新版本的}
+
+本章节将会介绍运行时的四种可回收的空间的回收时机，以及恢复时的可回收空间的回收时机。
+
+\subsection{运行时的可回收空间的回收时机}
+
+当事务提交并且将可回收的空间信息传递给垃圾回收机制之后。垃圾回收回收机制会在该提交事务的影响对于所有活跃的事务可见，并且对于所有后续的事务也可见的情况下，对所标记的空间进行回收。因为当该事务对于全局及后续的事务可见后，所有的后续事务逻辑上永远不会访问到比该事务更新所创建的版本更早的版本。同时该事务删除记录的影响对全局可见意味着所有全局事务逻辑上不会访问到被删除的记录。
+
+中止事务的所标记的空间情况相对复杂。中止事务的影响是对于全局事务永远都不可见的。因此全局事务不可能访问到中止事务所插入的新的记录。因此插入的新的版本链可以被立刻回收。中止事务更新所创建的新版本会根据版本可见性原则被所有事务无视，然而事务还是有可能物理地持有该版本的地址。因此事务在中止过程中需要将此类版本从版本链上断开，如图~\ref{fig:insert-abort} 所示。当并发的所有事务均结束后，垃圾回收线程才可能安全地回收该版本，同时不会对其他事务的访问版本链的行为产生影响。
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{事务在中止时对于更新创建的新版本进行的断链操作。}
+    \label{fig:insert-abort}
+\end{figure}
+
+除了中止事务插入的版本链可以立刻被回收外，其他三种情况均需要延后一段时间后才能回收。因此实际实现中采用了一个计数器来帮助垃圾回收线程判断回收时机。当事务提交或者中止时，事务会访问全局的事务 id 的计数器，记录一个最大的未被分配的事务 id，记为 $max\_seen\_tid$。这三种可回收空间的可回收时机为活跃的最小事务 id 大于 $max\_seen\_tid$。因为当该条件满足时，提交事务的影响会对于全局及后续事务可见，中止事务的并发的事务也已经结束了。
+
+\subsection{恢复时的可回收空间的回收时机}
+
+恢复时的可回收空间一共有几种情况，分别有不同的回收时机：（1）对于所有不可见的 head 可以被立刻回收。(2) 版本链中所有不可见的 version 也可以被立刻回收的，也可以有运行时的垃圾回收机制回收。（3）所有未被分配的版本，也就是不在版本链中的 version，需要等到数据恢复机制的后台扫描线程扫描了所有版本链之后才能回收。
+
+
+\section{系统工程实现}
+\label{sec:implement}
+
+本章节会着重介绍在工程实现中的垃圾回收机制设计，包括垃圾回收的频率，粒度，以及对并发和数据结构的崩溃一致性的设计和考量。章节~\ref{ssec:gc-metadata} 会先介绍我们垃圾回收的元数据设计，以及每个成员变量在垃圾回收起到的作用。然后章节~\ref{ssec:gc-implement} 中展示了事务提交和中止中与垃圾回收相关的操作。最后章节~\ref{ssec:gc-implement} 解释详细的垃圾回收流程，以及垃圾回收流程是如何避免与其他垃圾回收进程和事务产生冲突的。
+
+\subsection{垃圾回收元数据的数据结构设计}
+\label{ssec:gc-metadata}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{提交事务所标记的可回收空间}
+    \label{fig:gc-item}
+\end{figure}
+
+\subsection{事务的提交和中止的流程设计}
+\label{ssec:commit-abort}
+
+
+\subsection{垃圾回收的流程设计}
+\label{ssec:gc-implement}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{提交事务所标记的可回收空间}
+    \label{fig:gc-implemnt}
+\end{figure}
+
+
+\section{本章小结}

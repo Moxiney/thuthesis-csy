@@ -3,9 +3,181 @@
 \chapter{基于 NVM 的零拷贝无日志的存储引擎}
 
 \section{本章概述}
+基于 NVM 的零拷贝无日志的数据库存储引擎，N2DB，是垃圾回收机制和数据恢复机制设计的基础。
+章节~\ref{sec:storage_data_structure} 会详细介绍存储引擎的架构，以及存储引擎中的各个重要的数据结构的作用和功能。
+其中章节~\ref{ssec:table_heap} 会着重介绍基于多版本并发控制的记录的存储组织结构。
+最后章节~\ref{sec:gc_dr} 阐述这些数据结构与垃圾回收和数据恢复的关系。
 
-\section{存储引擎的数据结构}
 
-\section{多版本的记录存储结构}
+\section{存储引擎的存储架构}
+\label{sec:storage_data_structure}
 
-\section{垃圾回收和数据恢复的意义}
+如图~\ref{fig:n2db} 所示，N2DB 的架构整体上可以分为两层，下层是负责管理和分配 NVM 空间的 NVM 分配器。
+上层通过接口向下层申请存储空间，其中有三个主要存储区域，分别是元数据区，表数据堆以及事务状态数组。
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{存储引擎的架构示意图}
+    \label{fig:n2db}
+\end{figure}
+
+\subsection{NVM 分配器}
+NVM 分配器直接和 NVM 介质交互，并为上层的应用提供封装好的访问和分配接口。为了整体设计的方便考虑，数据库所使用的 NVM 空间通过 DAX 映射到一块连续的虚拟地址上。
+NVM 分配器以页粒度来分配和管理 NVM 存储空间。在本文中，页面的大小被设置为 2MB 。
+
+如图~\ref{fig:n2db} 所示，NVM 分配器将整体的 NVM 空间分为了三个部分。
+第一部分为 NVM 分配器的元数据。元数据中存放着一个用于记录页面分配情况的位图，页面所对应的比特为 1 时则说明该页面已经被分配，
+比特为 0 则意味着该页面尚未被分配。
+第二部分为一个指针数组，用于存放 NVM 上所有数据结构的根指针。该根指针数组的作用在于重启之后，上层应用能够通过根指针访问到所有活跃的数据结构。
+NVM 分配器提供了根指针的访问和持久化的接口。而数据结构的一致性需要由上层应用自己维护。
+第三部分为数据区域，NVM 分配器将该区域根据固定的大小切割成若干个页面，用于分配给上层的应用。
+
+
+\begin{algorithm}[t]
+    \caption{NVM 分配器的接口 $allocate\_page$}
+    \label{alg:allocate_page}
+    %\KwIn{Distribution over mete-training tasks: $p(\mathcal{T})$; Meta-testing tasks: $\mathcal{T}_{mt}$; Task-learning rate: $\alpha_{1}$; Meta-learning rate: $\alpha_{2}$.}
+    \KwOut{The pointer of allocated page.}
+    \BlankLine
+    \If{free\_page\_list is empty}{reload free\_page\_list;}
+
+    Get a new page id $p\_id$ from $free\_page\_list$;
+
+    Compute $addr$ using $p\_id$;
+
+    Set the bit of $p\_id$ to 1;
+
+    Fence;
+
+    return $addr$;
+
+\end{algorithm}
+
+\begin{algorithm}[t]
+    \caption{NVM 分配器的接口 $free\_page$}
+    \label{alg:free_page}
+    \KwIn{The page id $p\_id$.}
+    \KwOut{Success or not.}
+    \BlankLine
+    Set the bit of $p\_id$ to 0;
+
+    Fence;
+
+    Append $p\_id$ into $free\_page\_list$;
+
+    return $true$;
+
+\end{algorithm}
+
+
+NVM 分配器提供了分配页面和释放页面的接口。算法~\ref{alg:allocate_page} 展示了分配页面的伪代码。
+分配页面的流程可以分为三部分。
+（1) 分配器从一个空闲队列中找到一个新的空闲页面的地址。
+（2）分配器将该页面所对应的比特设置为 1，这一步通常使用一个原子写完成。
+（3）申请者得到页面的地址，并且将其记录在 NVM 空间上。
+
+算法~\ref{alg:free_page} 介绍了释放页面的伪代码。释放页面的流程可以简单地分为两步：(1) 在 bitmap 中设置页面所对应的比特。(2) 将该页面的 id 加入空闲的页面队列。
+
+从两个算法可以看出，NVM 分配器的分配页面和释放页面的过程是无日志的，仅适用一个原子写就可以保证分配页面和释放页面的原子性。
+然而这样的设计带来了内存泄漏的隐患。举个例子，如果系统在算法~\ref{alg:allocate_page} 的第二步以及第三步之间宕机了，
+那么对于 NVM 分配器而言，该页面被视为分配了，但是该页面的地址又没有被记录在 NVM 上。
+所以在重启之后，NVM 上所有的数据结构都不能使用该页面，进而造成了内存泄漏问题。
+而对于内存泄漏问题的处理，将在章节~\ref{chap:recovery} 中详细阐述。
+
+\subsection{元数据区}
+
+元数据区中存放在整个存储引擎，各个数据库以及各个表格的元数据。
+如图~\ref{fig:catalog} ，所有的元数据按照从属关系以树状形式组织起来。
+位于根节点的是存储引擎的元数据，用于记录存储引擎的数据库数量，使用的存储空间等元数据。
+其中根节点中存放着一个固定长度的数据库元数据的指针数组，用于记录数据库元数据的地址。
+而中间节点则是数据库的元数据，用于记录数据库中表格的数量，数据库的名称，数据库 ID 等元数据。
+与存储引擎的元数据类型，数据库的元数据中也存放着一个表格元数据的指针数组。
+而位于叶节点的则是表格元数据，记录着表格的名称，表格 ID，表格所申请得到的页面的地址，表格的模式信息。
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{元数据区中各级元数据的组织形式}
+    \label{fig:catalog}
+\end{figure}
+
+
+\subsection{表数据堆}
+\label{ssec:table_heap}
+
+\todo{一些专用的数据结构可以不翻译}
+
+一个表格逻辑上有若干条记录，表数据堆就是用于存放所有表格的记录相关的数据结构的区域。
+为了实现无日志的事务操作以及数据恢复，该存储引擎使用了基于多版本的记录存储结构。
+基于多版本的记录存储结构指的是每一个逻辑上的记录的所有历史版本都会物理地存放在存储空间中，
+所有的版本按照时间顺序从新到旧组织成一个链表形式，称之为版本链。其中有两种重要的数据结构，head 和
+version。每一条记录有且仅有一个 head，而一个记录有多个 version。
+
+记录的 head 是记录所对应的版本链的入口。
+一个表格中的每一条记录都有一一对应的 ID，称之为 row\_ID。
+因此每一个 head 也与 row\_ID 一一对应，系统可以通过 row\_ID 找到 head 的物理地址。
+如图~\ref{fig:table} 所示，一个 head 中包含了三个成员变量，remove\_tx，gc\_ts 以及 newest\_version。
+Remove\_tx 用于记录删除该行的事务的事务 ID。事务 ID 是每个事务唯一的标识符。
+每个事务开始时都会向一个单调递增的计数器申请一个事务 ID。
+Gc\_ts 是一个单调递增的计数器，代表了该行被垃圾回收的次数，
+通常用于防止同一 head 被重复回收。Newest\_version 则记录了该记录最新的 version 的地址。
+
+记录的 version 用于存放记录的历史版本。如图~\ref{fig:table} 所示，一个 version 主要有 4 个成员变量，
+分别是 xmin，xmax，prev\_version 以及 data。Xmin 记录了创建该版本的事务的事务 ID，而 xmax 记录了废弃该版本的事务的事务 ID。
+因此 xmin 和 xmax 可以指示一个 version 的生命周期，也就是 $[xmin, xmax)$，只有事务 ID 位于该区间的事务才有可能能够看到该 version。
+Prev\_version 则是一个指向更早 version 的指针，如果一个 version 没有更早的 version，那么该成员变量的值应该为 null，即空指针。
+
+一个表格需要向 NVM 分配器申请页面来存放 head 以及 version，而申请获得的页面的地址记录在 NVM 上，以防止内存泄漏。
+如图~\ref{fig:table} 所示，一个表格的元数据中有两个页面的指针，这两个页面分别是 head pages 以及 version pages。
+Head pages 是一个页面大小的指针数组，其中存放着该表格申请的用于存储 head 的页面的地址。
+同理，version pages 也是一个指针数组，存放则用于存储 version 的页面的地址。
+因此在重启之后，系统能够通过表格的元数据表格所申请的所有页面。
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{表格的记录相关数据结构的组织结构。}
+    \label{fig:table}
+\end{figure}
+
+
+\subsection{事务状态数组}
+\label{ssec:clog}
+如图~\ref{fig:clog} 所示, 事务状态数组是一个逻辑上无限长的用于记录事务状态的数组。
+每个事务一共有四种状态，分别是 INITIAL，IN-PROGRESS，COMMITTED 以及 ABORTED。
+INITIAL 代表事务的起始状态。IN-PROGRESS 代表了事务正在处于运行状态。COMMITTED 意味着事务已经提交了，
+而 ABORTED 代表了事务中止。
+由于每个事务只有四种状态，因此每个事务只需要 2 比特。
+虽然事务状态数组逻辑上是无限长的，但是在实际实现中，事务状态数组的存储空间是固定的。
+因此系统需要借助垃圾回收的信息，定期清理过期的事务的状态。
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \caption{事务状态数组的示意图}
+    \label{fig:clog}
+\end{figure}
+
+\todo{看看要不要更加具体地讲一下事务状态数组}
+
+
+\section{垃圾回收和数据恢复的作用}
+\label{sec:gc_dr}
+
+在前文中我们详细介绍了数据库存储引擎中的主要的数据结构以及其作用。
+在系统运行的过程中，系统不断地分配和回收空间。NVM 分配器需要按照页面粒度分配空间。
+而当系统创建一个新的数据库，新的表格，新的记录时，系统需要为数据库元数据，表格元数据，记录的 head 和 version 分配空间。
+
+垃圾回收起到的作用就是对于不需要的页面，version 进行回收，以提高 NVM 的空间使用率。
+垃圾回收机制需要使用到 head 和 version 中记录的生命周期信息，以及事务状态数组中记录的事务状态来判断一个 head 和 version 是否是不可见的。
+如果 head 和 version 是不可见的话，那么系统可以安全地回收这些空间，同时不会影响到到后续事务的影响。
+
+数据恢复的作用在于在重启之后能够帮助系统得到所有正在被使用的数据结构的地址和大小等信息，
+同时需要将不一致的数据结构恢复成一致性的状态。
+由于存储引擎上所有的数据结构都组织成树状，因此在重启之后，系统可以根据根指针找到所有正在被使用的元数据，
+进而找到所有 head 和 version 所在的页面。
+然而在表格分配 head 和 version 时候，分配信息是不持久化的。
+因此系统需要通过扫描存放 head 的页面找到所有可见的 head，并且根据可见的 head 遍历所有的版本链，找到所有在版本链上的 version。
+在这个过程中，未被使用的 head 和 version 会被垃圾回收机制回收，防止内存泄漏。
