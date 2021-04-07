@@ -36,7 +36,7 @@ N2DB 采用了多版本并发控制算法。
 
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{figures/version_visibility.pdf}
     \caption{版本可见性的判断流程图}
     \label{fig:version-visibility}
 \end{figure}
@@ -203,33 +203,32 @@ N2DB 采用了多版本并发控制算法。
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{figures/gc-a.pdf}
     \caption{提交事务更新操作相关的可回收空间}
     \label{fig:space-commit}
 \end{figure}
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{figures/gc-b.pdf}
     \caption{提交事务删除操作相关的可回收空间}
     \label{fig:space-commit2}
 \end{figure}
 
 首先是提交事务的所标记的可回收空间有两种情况：（1） 当该事务进行更新操作时，会创建一个新的版本。因此当该事务提交之后，比所创建的版本更早的版本可被回收。(2) 事务删除某一条记录并且提交后，该记录所对应的整个版本链也可以被回收。 当该提交事务的影响被所有事务以及后续事务可见时，该事务所标记的空间就是不可见的。因此这些空间可以被回收。
-\todo{画图}
-以图~\ref{fig:space-commit} 以及图~\ref{fig:space-commit2} 为例，事务 3 更新了记录 1，删除了记录 2。当事务 3 的影响为全局可以时，所有事务理论上不会访问到记录 1 的版本 1，也不会访问到记录 2 的所有版本。
+
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{figures/gc-c.pdf}
     \caption{中止事务插入操作相关的可回收空间}
     \label{fig:space-abort}
 \end{figure}
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
-    \caption{中止事务更新操作的可回收空间}
+    \includegraphics[width=1\linewidth]{figures/gc-d.pdf}
+    \caption{中止事务更新操作相关的可回收空间}
     \label{fig:space-abort2}
 \end{figure}
 
@@ -268,7 +267,7 @@ N2DB 采用了多版本并发控制算法。
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{figures/gc-e.pdf}
     \caption{事务在中止时对于更新创建的新版本进行的断链操作。}
     \label{fig:insert-abort}
 \end{figure}
@@ -398,11 +397,11 @@ GCItem 的数据结构定义如下：
 \textbf{中止流程：} 事务中止的流程与事务提交相近，但是更为复杂。首先事务先设置事务状态数组中的自身的状态为 ABORTED。接下来 insert\_set 中的所有版本可以立刻被表格回收。当版本被回收之后，其对应的 head 也可以被表格回收。
 之后对于 update\_set 中的所有版本，事务使用一个 CAS 指令原子化修改版本的 head 的 newest\_version 指针，修改成功的话则说明该版本被成功地从版本链上断开。然后事务将 update\_set 中的版本与其他信息封装成 GCItem，将其添加到本地队列中。最后事务记录记录最大的已分配的事务 ID，更新本地队列中所有的 GCItem，最后使用垃圾回收调度器的 schedule 接口传递所有的 GCItem。中止流程中有两个设计要点：
 
-首先是记录最大的已分配的事务 ID 必须在更新所创建的版本断链之后。\todo{画图}假设两者顺序对调，以图~\ref{fig:update-abort-read} 为例，事务 1 中止时记录了最大已分配的事务 ID 为 2。而当事务 1 记录完之后，事务 2 开始了并且读到同样的一条记录，此时事务 2 可能会持久被标记的版本的指针。而如果事务 1 结束了中止流程并且将所有的 GCItem 传递给垃圾回收调度器，则垃圾回收调度器会认为当前事务 ID 已经大于版本所对应的最大的已分配的事务 ID，因此触发了回收。因此事务 2 可能会读到不一致的数据。
+首先是记录最大的已分配的事务 ID 必须在更新所创建的版本断链之后。假设两者顺序对调，以图~\ref{fig:update-abort-read} 为例，事务 1 中止时记录了最大已分配的事务 ID 为 2。而当事务 1 记录完之后，事务 2 开始了并且读到同样的一条记录，此时事务 2 可能会持久被标记的版本的指针。而如果事务 1 结束了中止流程并且将所有的 GCItem 传递给垃圾回收调度器，则垃圾回收调度器会认为当前事务 ID 已经大于版本所对应的最大的已分配的事务 ID，因此触发了回收。因此事务 2 可能会读到不一致的数据。
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{figures/read-abort-conflict.jpg}
     \caption{事务访问版本链与事务中止流程的并发冲突}
     \label{fig:update-abort-read}
 \end{figure}
@@ -412,7 +411,7 @@ GCItem 的数据结构定义如下：
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{example-image-a.pdf}
     \caption{事务更新与事务中止流程的并发冲突}
     \label{fig:update-abort-update}
 \end{figure}

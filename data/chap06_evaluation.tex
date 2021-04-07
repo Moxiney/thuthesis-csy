@@ -13,7 +13,7 @@
 
 \section{实验设置}
 
-本文的实验均在同一台服务器上运行。该服务器有 4 个 Intel Xeon Gold 5220 处理器。\todo{补充核数，内存大小，可以顺带提一嘴主板}
+本文的实验均在同一台服务器上运行。该服务器有 4 个 Intel Xeon Gold 5220 处理器。每个处理器上有 18 个核。
 Intel Optane DC PMM 是安装在处理器的内存插槽的。一个处理器有 6 个内存插槽，Intel Optane DC PMM 的容量是 128 GB，因此一个处理器的 NVM 空间至多为 768 GB。由于非统一内存访问（NUMA）效应，线程跨核访问 NVM 空间的性能会显著下降。因此本文的实验均在同一个核上进行。本实验中 NVM 的使用模式有 DAX 模式以及文件系统模式，两种模式的性能差异如表格~\ref{tab:nvm-metric} 所示。
 
 \begin{table}
@@ -41,13 +41,6 @@ InnoDB 使用文件系统模式访问和管理 NVM。
 
 N2DB 在本实验中使用 $gc\_threshold$ 参数来控制垃圾回收的频率。在垃圾回收的对比实验中，gc\_threshold 被设置为 100。
 
-\begin{figure}
-    \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
-    \caption{Intel Optane PCDMM 的实验环境}
-    \label{fig:config}
-\end{figure}
-
 \section{实验负载}
 
 本实验使用 YCSB 以及 TPC-C 两种实验负载来测试 N2DB 的垃圾回收机制和数据恢复机制的性能。
@@ -56,9 +49,9 @@ YCSB 是雅虎公司对云服务进行性能测试的工具。YCSB 主要测试�
 YCSB 的测试数据库中仅有一个张表格。表格中一共有 10 列，其中包含一个主键以及 9 个字节类型的列。每列的长度为 10 字节，因此一条记录为 100 字节。本实验中 YCSB 的测试表格中一共有 1000000 条记录。表格的数据大小在 1 GB 左右。
 YCSB 中的每个事务会进行 10 次操作，每次操作的类型是随机的。本实验中所使用 YCSB 根据操作类型的分布可以分为三类，分别是：
 \begin{enumerate}
-    \item 读偏向型：$90\%$ 读操作，$10\%$ 写操作；
-    \item 平衡型：$50\%$ 读操作，$50\%$ 写操作；
-    \item 写偏向型：$10\%$ 读操作，$90\%$ 写操作；
+    \item \textbf{读偏向型：}$90\%$ 读操作，$10\%$ 写操作；
+    \item \textbf{平衡型：}$50\%$ 读操作，$50\%$ 写操作；
+    \item \textbf{写偏向型：}$10\%$ 读操作，$90\%$ 写操作；
 \end{enumerate}
 
 
@@ -71,7 +64,7 @@ TPC-C 的测试数据库一共包含 9 张表，包括仓库，用户，订单�
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=15cm, trim={1cm 9cm 1cm 10cm}]{figures/gc-ycsb-throughput.pdf}
     \caption{YCSB 负载下垃圾回收性能的吞吐率对比实验}
     \label{fig:gc-throughput-ycsb}
 \end{figure}
@@ -83,7 +76,7 @@ TPC-C 的测试数据库一共包含 9 张表，包括仓库，用户，订单�
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=15cm, trim={1cm 9cm 1cm 10cm}]{figures/gc-tpcc-throughput.pdf}
     \caption{TPC-C 负载下垃圾回收性能的吞吐率对比实验}
     \label{fig:gc-throughput-tpcc}
 \end{figure}
@@ -101,20 +94,20 @@ TPC-C 的测试数据库一共包含 9 张表，包括仓库，用户，订单�
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=15cm, trim={1cm 9cm 1cm 10cm}]{figures/gc-ycsb-storage.pdf}
     \caption{YCSB 负载下垃圾回收性能的存储空间对比实验}
     \label{fig:gc-storage-ycsb}
 \end{figure}
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=15cm, trim={1cm 9cm 1cm 10cm}]{figures/gc-tpcc-storage.pdf}
     \caption{TPC-C 负载下垃圾回收性能的存储空间对比实验}
     \label{fig:gc-storage-tpcc}
 \end{figure}
 
 整体上而言，垃圾回收机制对于 N2DB 此类基于多版本并发控制的算法的系统效果显著。
-并且效果随着系统中的更新操作的增加而增加。
+并且效果随着系统中的更新操作的所占的比重增加而增加。
 
 
 \section{数据恢复性能对比实验}
@@ -128,11 +121,12 @@ TPC-C 的测试数据库一共包含 9 张表，包括仓库，用户，订单�
 总体上而言，N2DB 的恢复时间远小于 InnoDB 的恢复时间。前者大约比后者小三个数量级。
 造成这一差异的主要原因在于基于 WAL 的恢复机制的复杂性。
 该机制要求系统在数据恢复时扫描日志，分析系统中断的状态。
-之后系统需要重做 checkpoint 之后的所有日志来保证提交事务的影响，
-并且需要回滚所有未提交事务的操作。
+之后系统需要重做检查之后的所有日志来将系统的状态恢复到系统故障的时刻的状态。
+最后在回滚阶段，系统需要回滚所有未提交事务的操作。
 并且该机制要求系统只有在回滚操作全部结束后才能相应服务。
 N2DB 从并发控制算法的角度保证了提交事务的影响的持久化，因此在数据恢复时不需要重做。
-对于 N2DB 中的中止事务的影响，对于 head 的影响会被立刻回收，而对于 version 的影响会根据可见性判断无视掉。N2DB 仅需要得到索引重建之后就能提供服务。
+对于 N2DB 中的中止事务的影响，对于 head 的影响会被立刻回收，而对于 version 的影响会根据可见性判断无视掉。
+N2DB 仅需要得到索引重建之后就能提供服务。
 
 从 InnoDB 的实验结果可以看出，不同的 $log\_file\_size$ 会显著影响恢复时间。
 在本文的实验中，256 MB 相对于 64 MB 仅能带来 $10\%$ 的性能提升，同时会导致恢复时间提高 $70\%$。
@@ -140,27 +134,50 @@ N2DB 从并发控制算法的角度保证了提交事务的影响的持久化，
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=15cm, trim={1cm 9cm 1cm 10cm}]{figures/recovery-time.pdf}
     \caption{YCSB 负载下数据恢复的时间对比实验}
     \label{fig:recovery-time-ycsb}
 \end{figure}
 
+\begin{figure}
+    \centering
+    \includegraphics[width=15cm, trim={1cm 9cm 1cm 10cm}]{figures/recovery_perf.pdf}
+    \caption{N2DB 的数据恢复性能分析}
+    \label{fig:recovery-n2db-perf}
+\end{figure}
 
-\todo{补上说明}
-本实验分析了两个系统在恢复时的性能分布，结果显示在图~\ref{fig:recovery-time-analysis} 中。
-从图中可以看出，N2DB 的主要开销在于记录数据的恢复阶段。而其中开销最大的是判断 head 的可见性。
-元数据恢复以及 NVM 分配器的恢复仅占了很小一部分。
-InnoDB 的主要开销在于日志的分析，重做以及回滚，与前文的分析一致。
-
+本章节还分析了两个系统在恢复时的性能分布。
+N2DB 的结果展示在图~\ref{fig:recovery-n2db-perf} 中。
+从图中可以看出，N2DB 的主要开销在于 reload\_heads。
+reload\_heads 的作用是判断所有表格中 head 的可见性。
+在目前的实现中，reload\_heads 的开销和表格中 head 的数量成正比。
+接下来占比比较大的是事务状态数组的恢复。在数据恢复时系统需要设置之前的事务的状态，将其中未提及的事务的状态设置为 ABORTED。
+剩下的元数据恢复以及 NVM 分配器的恢复占了少部分开销。
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
-    \caption{N2DB 以及 InooDB 的数据恢复性能分析}
-    \label{fig:recovery-time-analysis}
+    \includegraphics[width=15cm, trim={1cm 9cm 1cm 10cm}]{figures/innodb-recovery-perf.pdf}
+    \caption{InnoDB 的数据恢复性能分析}
+    \label{fig:recovery-innodb-perf}
 \end{figure}
 
-\todo{perf 一下两个系统在 100k 情况下的恢复时间开销，给每个主要部分列出占比图}
+
+InnoDB 的数据恢复阶段的开销占比如图~\ref{fig:recovery-innodb-perf} 所示。
+buf\_flush\_insert\_sorted\_into\_flush\_list 是 InnoDB 在恢复时会调用的数据写回方法。
+当 InnoDB 恢复时，其重做阶段和回收阶段都要进行数据的写入。
+buf\_calc\_page\_new\_checknum 也是数据写入的一环。
+ut\_delay 的开销是由于 InnoDB 在恢复时采用多线程，因此为了避免冲突使用 ut\_delay 来实现自旋锁。
+
+从该开销占比可以看出，InnoDB 在数据恢复阶段的绝大部分开销都是记录数据的修改造成的。
+而 N2DB 在数据恢复阶段除了事务状态数组的恢复以外，几乎不需要进行修改操作。
+因而 N2DB 的恢复相较于 InnoDB 的 ARIES而言开销极小。
+
+
+
+
+
+
+
 
 \subsection{存储空间对比}
 
@@ -173,7 +190,7 @@ InnoDB 的主要开销在于日志的分析，重做以及回滚，与前文的�
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=15cm, trim={1cm 9cm 1cm 10cm}]{figures/recovery-storage.pdf}
     \caption{YCSB 负载下垃圾回收性能的存储空间对比实验}
     \label{fig:recovery-storage-ycsb}
 \end{figure}

@@ -18,7 +18,21 @@ NVMDIMM-N 同时采用了闪存以及 DRAM。上层应用可以直接访问 DRAM
 Optane 使用了特殊的 3D XPoint 介质，不需要额外的备用电源。
 Optane 的访问性能慢于 DRAM，但是其容量远大于传统的 DRAM。
 
-\todo{找一下几个介质之间的数据对比}
+\begin{table}
+    \centering
+    \caption{不同存储介质对比}
+    \begin{tabular}{llll}
+        \toprule
+        存储介质 & 是否字节寻址 & 读/写延迟    & 是否非易失 \\
+        \midrule
+        SSD      & 否           & $ \sim $10us & 是         \\
+        DRAM     & 是           & 70ns-100ns   & 否         \\
+        NVDIMM-N & 是           & 40ns-140ns   & 是         \\
+        Optane   & 是           & 100ns-500ns  & 是         \\
+        \bottomrule
+    \end{tabular}
+    \label{tab:nvm}
+\end{table}
 
 NVM 的使用方式可以分为三种：（1）\textbf{文件系统模式}：文件系统模式指的是将 NVM 视为一个块存储设备，并且在上实现文件系统。上层的应用将数据以文件的形式存储在 NVM 上并且使用文件系统的读写接口访问 NVM 上的数据。（2）\textbf{内存模式}：内存模式指的是应用将 NVM 视为一块较大的内存。应用在使用 NVM 的过程中通过内存分配器来管理和使用该空间，并不会针对数据持久化性做额外的设计。（3）\textbf{DAX 模式}：DAX 模式的含义是直接访问模式。应用直接将 NVM 映射到自身的虚拟地址中一块区域。该模式允许应用直接使用内存访问的指令访问 NVM，绕过了文件系统，因此提高了访问性能。
 
@@ -108,8 +122,8 @@ NVM 事务内存上的日志与性能的考量也适用于 NVM 数据库管理�
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
-    \caption{常见的基于 NVM 的数据库的存储架构。\todo{参考 PPT 里的那个两层的图}}
+    \includegraphics[width=1\linewidth]{example-image-a.pdf}
+    \caption{常见的基于 NVM 的数据库的存储架构}
     \label{fig:nvm-structure}
 \end{figure}
 
@@ -172,13 +186,13 @@ N2DB 的数据管理有两个粒度，分别是页粒度以及版本粒度。
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{example-image-a.pdf}
     \caption{存储引擎的架构示意图}
     \label{fig:n2db}
 \end{figure}
 
 \subsubsection{NVM 分配器}
-
+\label{ssec:nvm-alloc}
 \textbf{NVM 分配器：}NVM 分配器直接和 NVM 介质交互，并为上层的应用提供封装好的分配和回收接口。为了方便设计，N2DB 所使用的 NVM 空间通过 DAX 映射到一块连续的固定的虚拟地址上。
 NVM 分配器以页粒度来分配和管理 NVM 存储空间。
 N2DB 的默认页面大小设置为 2 MB。
@@ -187,6 +201,13 @@ N2DB 的默认页面大小设置为 2 MB。
 第一个页面存储着 NVM 分配器的元数据。元数据中存放着一个用于记录页面分配情况的位图，页面所对应的比特为 1 时则说明该页面已经被分配，
 比特为 0 则意味着该页面尚未被分配。
 其他页面用于存储 N2DB 的数据。上层应用通过调用 NVM 分配器的分配接口申请数据所需的空间。
+
+N2DB 中的 NVM 分配器是无日志的，其分配性能高。
+分配器的分配流程可以分为三步：（1）NVM 分配器从页面的空闲队列中找到一个空闲页面。
+（2）NVM 分配器将该页面在位图中的状态更改为已分配，并持久化。
+（3）NVM 分配器返回该页面的地址。
+之后上层应用拿到了申请得到的页面，并将其记录在数据结构里。
+从该流程可以看出，该分配器无法保证页面分配和地址持久化的原子性。
 
 \subsubsection{表格数据堆}
 
@@ -218,7 +239,7 @@ Head pages 是一个页面大小的指针数组，其中存放着该表格申请
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{head_version.pdf}
     \caption{表格的记录相关数据结构的组织结构。}
     \label{fig:table}
 \end{figure}
@@ -235,7 +256,7 @@ INITIAL 代表事务的起始状态。IN-PROGRESS 代表了事务正在处于运
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{figures/clog.pdf}
     \caption{事务状态数组的示意图}
     \label{fig:clog}
 \end{figure}
@@ -384,7 +405,7 @@ Andy 等人对于三种途径进行过性能对比测试\cite{mvcc_evaluation}�
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{figures/log_entry.pdf}
     \caption{WAL 示例}
     \label{fig:wal}
 \end{figure}
@@ -411,7 +432,7 @@ ARIES 是最主流的基于预写日志的数据恢复方法。ARIES 最早于 1
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.6\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{example-image-a.pdf}
     \caption{ARIES 恢复流程}
     \label{fig:ARIES}
 \end{figure}
