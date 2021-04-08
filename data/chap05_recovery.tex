@@ -47,7 +47,7 @@ N2DB 为了在重启之后能够满足以上三个设计目标，需要对存储
 
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=1\linewidth]{figures/nvm-allocator}
+    \includegraphics[width=1\linewidth]{figures/new-nvm-allocator}
     \caption{修改后的 N2DB 存储引擎的结构}
     \label{fig:nvm-allocator}
 \end{figure}
@@ -58,6 +58,13 @@ N2DB 为了在重启之后能够满足以上三个设计目标，需要对存储
 元数据区的结构如图~\ref{fig:catalog} 所示。
 元数据区中的数据结构组织成一颗三层高的树，其根节点的指针存储在 NVM 分配器的指针区域中。元数据区根据树的层次分别由三类数据结构，从根节点到叶节点分别是 N2DB 元数据，数据库元数据以及表格元数据。
 
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{figures/catalog.pdf}
+    \caption{数据库元信息区的结构}
+    \label{fig:catalog}
+\end{figure}
+
 N2DB 元数据中记录的整个存储引擎的元数据，比如存储引擎是否被初始化，这一轮的事务 ID 的起始值等信息。一个存储引擎可以创建多个数据库，因此 N2DB 元数据中还存放着数据库元数据的数量有以及各个数据库元数据的地址。
 
 数据库元数据中存储这数据库的标识符，数据库的名称。同时数据库元数据中存储着一个定长的指针数组，其中的每个指针均是指向从属于该数据库的表格元数据。为了减少恢复时的开销，系统同样存储着表格数量。
@@ -66,12 +73,7 @@ N2DB 元数据中记录的整个存储引擎的元数据，比如存储引擎是
 表格元数据用于存储表格的所有元数据，包括表格的标识符等信息。同时表格元信息中也存储了模式信息，数据库管理系统可以借此计算出表格中所有的 head 和 version 的大小。在系统运行时，表格会将申请获得的页面的地址记录在表格元数据中。
 
 
-\begin{figure}
-    \centering
-    \includegraphics[width=1\linewidth]{figures/catalog.pdf}
-    \caption{数据库元信息区的结构}
-    \label{fig:catalog}
-\end{figure}
+
 
 \section{数据恢复机制设计思路}
 
@@ -130,7 +132,7 @@ N2DB 在前几步记录了所有被数据库所使用的空间的信息。
 
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=1\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{recovery.pdf}
     \caption{记录数据的恢复步骤}
     \label{fig:record-recovery}
 \end{figure}

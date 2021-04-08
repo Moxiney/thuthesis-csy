@@ -268,7 +268,7 @@ N2DB 采用了多版本并发控制算法。
 \begin{figure}
     \centering
     \includegraphics[width=1\linewidth]{figures/gc-e.pdf}
-    \caption{事务在中止时对于更新创建的新版本进行的断链操作。}
+    \caption{事务在中止时对于更新创建的新版本进行的断链操作}
     \label{fig:insert-abort}
 \end{figure}
 
@@ -397,24 +397,37 @@ GCItem 的数据结构定义如下：
 \textbf{中止流程：} 事务中止的流程与事务提交相近，但是更为复杂。首先事务先设置事务状态数组中的自身的状态为 ABORTED。接下来 insert\_set 中的所有版本可以立刻被表格回收。当版本被回收之后，其对应的 head 也可以被表格回收。
 之后对于 update\_set 中的所有版本，事务使用一个 CAS 指令原子化修改版本的 head 的 newest\_version 指针，修改成功的话则说明该版本被成功地从版本链上断开。然后事务将 update\_set 中的版本与其他信息封装成 GCItem，将其添加到本地队列中。最后事务记录记录最大的已分配的事务 ID，更新本地队列中所有的 GCItem，最后使用垃圾回收调度器的 schedule 接口传递所有的 GCItem。中止流程中有两个设计要点：
 
-首先是记录最大的已分配的事务 ID 必须在更新所创建的版本断链之后。假设两者顺序对调，以图~\ref{fig:update-abort-read} 为例，事务 1 中止时记录了最大已分配的事务 ID 为 2。而当事务 1 记录完之后，事务 2 开始了并且读到同样的一条记录，此时事务 2 可能会持久被标记的版本的指针。而如果事务 1 结束了中止流程并且将所有的 GCItem 传递给垃圾回收调度器，则垃圾回收调度器会认为当前事务 ID 已经大于版本所对应的最大的已分配的事务 ID，因此触发了回收。因此事务 2 可能会读到不一致的数据。
-
 \begin{figure}
     \centering
-    \includegraphics[width=1\linewidth]{figures/read-abort-conflict.jpg}
+    \includegraphics[width=1\linewidth]{read-abort.pdf}
     \caption{事务访问版本链与事务中止流程的并发冲突}
     \label{fig:update-abort-read}
 \end{figure}
 
-其次是通过 CAS 指令修改 head 的 newest\_version 可以防止并发事务之间的冲突，同时可以保证对应版本断链。
-假设使用原子性写来修改 newest\_version，以图~\ref{fig:update-abort-update} 为例，当事务 1 中止之后，事务 2 更新同一条记录。之后事务 2 创建新版本。事务 1 和事务 2 都需要修改 head 指针，前者需要将指针修改为对应版本的后一个版本，后者则要把指针修改为新分配的版本。因此如果事务 2 原子性写在前，而事务 1 原子写在后，则事务 2 所创建的新版本就不在版本链上。因此这种情况造成了事务 2 的更新丢失。而使用 CAS 指令可以防止该问题，同时也不引入锁的开销。
+首先是记录最大的已分配的事务 ID 必须在更新所创建的版本断链之后。假设两者顺序对调，系统会产生故障。
+以图~\ref{fig:update-abort-read} 为例，事务 1 中止时记录了最大已分配的事务 ID 为 1。而当事务 1 记录完之后，事务 2 开始了读取记录 A。
+事务 2 在读取记录 A 的过程中会物理地持有 $A_1$ 的指针。
+之后事务 1 将版本 $A_1$ 从版本链上断开，之后结束了中止流程。
+该线程的垃圾回收调度器会判断版本 $A_1$ 满足回收条件，并将其回收。
+事务 2 此时就会读到异常数据。
 
 \begin{figure}
     \centering
-    \includegraphics[width=1\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{update-conflict.pdf}
     \caption{事务更新与事务中止流程的并发冲突}
     \label{fig:update-abort-update}
 \end{figure}
+
+其次是通过 CAS 指令修改 head 的 newest\_version 可以防止并发事务之间的冲突，同时可以保证对应版本断链。
+假设使用原子写来修改 newest\_version，会产生事务的更新丢失。
+以图~\ref{fig:update-abort-update} 为例，当事务 1 中止之后，事务 2 更新同一条记录 A。
+之后事务 2 创建新版本 $A_2$。
+事务 1 和事务 2 都需要修改 head 指针，前者需要将指针修改为对应版本的后一个版本，后者则要把指针修改为新分配的版本。
+因此如果事务 2 原子性写在前，而事务 1 原子写在后，则事务 2 所创建的新版本 $A_2$ 就不在版本链上。
+因此这种情况造成了事务 2 的更新丢失。
+而事务 1 在断链操作中使用 CAS 指令可以防止该问题。
+
+
 
 
 

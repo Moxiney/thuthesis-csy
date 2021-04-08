@@ -3,14 +3,14 @@
 % 中英文摘要和关键字
 
 \begin{abstract}
-  传统的数据库采用内存-持久化介质的二层架构。
-  数据库的数据有两份拷贝，一份在内存中作为高速的缓存，一份在持久化机制保证数据非易失性。
+  传统的数据库采用内存-持久化介质的双层架构。
+  数据库的数据有两份拷贝，一份在内存中作为高速的缓存，一份在持久化介质上以保证数据非易失性。
   两个介质之间的数据同步开销以及数据管理的复杂性是传统数据库的瓶颈。
 
   NVM 是一种新的存储介质。
   NVM 支持字节寻址，数据非易失，同时其访问延迟与 DRAM 处于同一个数量级并且容量大。
   NVM 硬件技术的商业化给数据库研究提供了新的方向，即采用单层存储架构。
-  单层架构的数据库管理系统能够减少数据同步的开销，使系统运行无日志化。
+  单层架构的数据库管理系统能够减少数据同步的开销，并使系统运行无日志化。
 
   然而无日志的前提给数据库的垃圾回收机制以及数据恢复机制带来了挑战。
   在无日志的前提下，数据管理无法保证分配空间以及使用空间的原子性，会造成内存泄漏问题。
@@ -18,10 +18,14 @@
   另一方面，数据库管理系统需要在数据恢复阶段保证事务的原子性以及持久化，
   而日志文件记录了事务的操作。系统难以在无日志的前提下消除未提交事务的片面影响。
 
-  因此本文基于 NVM 的硬件特性，结合现有 NVM 相关工作对日志系统以及事务原子性和持久化的研究，设计了基于 NVM 的数据库管理系统的垃圾回收机制以及数据恢复机制。
-  本文采用三个主要的设计方法。首先，本文对于数据库存储架构进行修改，将 NVM 上的数据结构设计成树状架构。其次，为了数据管理的无日志化，本文采用了懒惰垃圾回收机制来异步地回收内存泄漏的空间。最后，本文设计了可见性判断帮助事务无视未提交事务的片面影响。
+  基于现有 NVM 工作的设计思路，本文设计了不基于日志系统的垃圾回收机制以及数据恢复机制。
+  本文的主要贡献如下：
+  \begin{enumerate}
+    \item 本文采用了事务粒度的垃圾回收机制。该垃圾回收在系统运行时尽可能地回收事务产生不可见的数据结构，提高了存储的空间的利用率。在恢复阶段，垃圾回收会回收潜在的内存泄漏的存储空间。
+    \item 本文了结合了无日志的 NVM 分配器的设计思路，设计出第一个不基于日志的数据库恢复机制。本文通过设计 NVM 上数据结构来保证在重启之后 NVM 数据的可读性。通过设计数据结构的可见性判断，系统能够在保证数据库 ACID 特性的前提下使用较少开销就能恢复正常工作状态。
+    \item 本文在 Intel Optane DC PMM 环境下测试了了两种机制的效果。实验表明，垃圾回收机制能够在至多降低 $10\%$ 的运行时性能的前提下，帮助系统节约至多 $67\%$ 的存储空间。同时与 InnoDB 的恢复性能对比实验表明，本文所提出的无日志数据恢复机制的恢复时间十分迅速，1.5 GB 左右的记录数据仅需要 0.85s 就能恢复成功。同时该恢复时间比基于写前日志的恢复时间低至多三个数量级。并且该数据恢复机制所使用的存储空间仅仅是 InnoDB 的一半。
+  \end{enumerate}
 
-  本文在 Intel Optane DC PMM 环境下测试了了两种机制的效果。实验表明，垃圾回收机制能够在至多降低 $10\%$ 的运行时性能的前提下，帮助系统节约至多 $67\%$ 的存储空间。同时与 InnoDB 的恢复性能对比实验表明，本文所提出的无日志数据恢复机制的恢复时间十分迅速，1.5 GB 左右的记录数据仅需要 0.85s 就能恢复成功。同时该恢复时间比基于写前日志的恢复时间低至多三个数量级。并且该数据恢复机制所使用的存储空间仅仅是 InnoDB 的一半。
   % 关键词用“英文逗号”分隔，输出时会自动处理为正确的分隔符
   \thusetup{
     keywords = {非易失性内存, 数据库管理系统, 垃圾回收, 数据恢复, 日志},
@@ -29,16 +33,33 @@
 \end{abstract}
 
 \begin{abstract*}
-  An abstract of a dissertation is a summary and extraction of research work and contributions.
-  Included in an abstract should be description of research topic and research objective, brief introduction to methodology and research process, and summarization of conclusion and contributions of the research.
-  An abstract should be characterized by independence and clarity and carry identical information with the dissertation.
-  It should be such that the general idea and major contributions of the dissertation are conveyed without reading the dissertation.
+  Traditional database management system(DBMS) uses a two-layer storage architecture.
+  There are two copies of the record data, one in memory as a high-speed buffer and one in non-volatile storage to ensure data durability.
+  The data synchronization overhead between the two storage and the complexity of data management are the bottlenecks of traditional databases.
 
-  An abstract should be concise and to the point.
-  It is a misunderstanding to make an abstract an outline of the dissertation and words “the first chapter”, “the second chapter” and the like should be avoided in the abstract.
+  Non-volatile memory(NVM) supports byteaddressable memory access which is similar to DRAM, while at the same time, NVM can keep the
+  in-memory data persistent like disks.
+  The commercialization of NVM has provided a new direction for database research, namely the adoption of a single-layer storage architecture.
+  A single-layer architecture for database management systems can reduce the overhead of data synchronization and make the system run without logging.
 
-  Keywords are terms used in a dissertation for indexing, reflecting core information of the dissertation.
-  An abstract may contain a maximum of 5 keywords, with semi-colons used in between to separate one another.
+  However, the log-freedom property poses a challenge to garbage collection  and data recovery of DBMS.
+  With no logs, data management cannot guarantee the atomicity of memory allocation, which can lead to memory leaks.
+  The memory leaks on NVM is persistent and is harmful to DBMS.
+  On the other hand, the DBMS needs to ensure the atomicity and durability of transactions during the data recovery phase.
+  The log file records the operation of the transaction. Thus, it is difficult for the system to eliminate the partial effects of uncommitted transactions without logging.
+
+  Based on the design choices of existing NVM works, this paper presents garbage collection and data recovery for a log-freedom NVM-based DBMS.
+  The main contributions of this paper are as follow:
+
+  \begin{enumerate}
+    \item This paper presents a transaction-level garbage collection which enables the DBMS to reclaim invisible data structures as soon as possible and saves NVM space. In the data recovery phase, the garbage collection reclaims the storage space to avoid potential memory leaks.
+    \item This paper presents the first log-freedom data recovery mechanism which is based on the design choice of log-freedom NVM allocator.This paper ensures the readability of NVM data after reboot by designing the data structure on NVM. This paper also proposes visibility rules for key data structures. The rules enables the system to go back to work with less overhead while ensuring ACID properties.
+    \item  This paper evaluate garbage collection and data recovery on Intel Optane DC PMM. The evaluation show that Enabling garbage collection results in up to
+          10\% performance degradation, but saves up to 67\% storage space. Besides, our data recovery requires only 0.2\%
+          of the time and half of the storage space of InnoDB.
+
+  \end{enumerate}
+
 
   % Use comma as seperator when inputting
   \thusetup{

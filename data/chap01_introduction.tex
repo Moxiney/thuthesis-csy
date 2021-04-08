@@ -12,7 +12,7 @@
 现有的 NVM 数据库工作的设计方法有三类。
 一类 NVM 数据库研究专注于是使用 NVM 替换数据库的存储介质，例如 NSTORE\cite{arulraj_lets_2015}。由于 NVM 相对于磁盘的访问性能优异，此类方法能带来性能的提升。
 另一类则是局部重新设计。Facebook 使用 NVM 降低存储的成本\cite{facebook}，SAP HANA 则使用 NVM 存放一部分数据来降低恢复时间\cite{andrei_sap_2017}。
-另外一些工作针对 NVM 的特性重新设计数据库的组件，例如索引\cite{nv-tree,chen_persistent_2015,ma_roart_2021}，日志\cite{wbl}以及分配器\cite{pmdk,bhandari_makalu_2016}等。
+另外一些工作针对 NVM 的特性重新设计数据库的组件，例如索引\cite{nv-tree,chen_persistent_2015,ma_roart_2021,arulraj2018bztree}，日志\cite{wbl}以及分配器\cite{pmdk,bhandari_makalu_2016}等。
 前两种设计方法仍停留在传统数据库的设计框架中，即使用两种性能差异巨大的存储介质，并且使用复杂的数据管理机制以及日志系统来填补两个介质之间的性能差异。
 第三种思路是整体重新设计架构，比如 N2DB\cite{liu_graduate} 和 Zen\cite{liu_zen_2021}。二者利用 NVM 的特性，设计了无日志的数据库系统。无日志的特性降低系统在运行时由于数据同步以及数据管理的开销，提高了系统的性能。
 

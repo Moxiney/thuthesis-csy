@@ -122,12 +122,12 @@ NVM 事务内存上的日志与性能的考量也适用于 NVM 数据库管理�
 
 \begin{figure}
     \centering
-    \includegraphics[width=1\linewidth]{example-image-a.pdf}
-    \caption{常见的基于 NVM 的数据库的存储架构}
+    \includegraphics[width=1\linewidth]{nvmdb.pdf}
+    \caption{常见的四种基于 NVM 的数据库的存储架构}
     \label{fig:nvm-structure}
 \end{figure}
 
-Andy 等人通过 NVM 替换数据库的持久化介质，并为 NVM 上的数据存储格式进行细微的修改\cite{arulraj_lets_2015}。
+Andy 等人通过 NVM 替换数据库的持久化介质，并为 NVM 上的数据存储格式进行细微的修改\cite{arulraj_lets_2015,arulraj_how_2017}。
 模拟实验证明使用 NVM 代替磁盘能够带来 $1~2$ 倍的性能提升。
 
 Katzburg 等人通过实验比较了关系型数据库在 NVMDIMM-N 上性能表现\cite{katzburg_nvdimm-n_2018}。
@@ -186,7 +186,7 @@ N2DB 的数据管理有两个粒度，分别是页粒度以及版本粒度。
 
 \begin{figure}
     \centering
-    \includegraphics[width=1\linewidth]{example-image-a.pdf}
+    \includegraphics[width=1\linewidth]{old-n2db.pdf}
     \caption{存储引擎的架构示意图}
     \label{fig:n2db}
 \end{figure}
@@ -240,7 +240,7 @@ Head pages 是一个页面大小的指针数组，其中存放着该表格申请
 \begin{figure}
     \centering
     \includegraphics[width=1\linewidth]{head_version.pdf}
-    \caption{表格的记录相关数据结构的组织结构。}
+    \caption{表格的记录相关数据结构的组织结构}
     \label{fig:table}
 \end{figure}
 
@@ -399,16 +399,28 @@ Andy 等人对于三种途径进行过性能对比测试\cite{mvcc_evaluation}�
 数据库管理系统在记录日志文件之外，还会定期将内存中的脏页写回到磁盘上。
 数据库将脏数据写回到磁盘的操作称之为制造检查点。
 同时数据库会将日志文件中记录一次制造检查点操作。
-图~\ref{fig:wal} 中展示一个 WAL 日志文件示例。从图中可以看出，事务 1 执行了两个更新操作，事务 2 执行了一个插入操作，之后系统执行了一次检查点操作。当检查点操作之后，事务 1 提交了。
+表格~\ref{tab:wal} 中展示一个 WAL 日志文件示例。从图中可以看出，事务 1 执行了两个更新操作，事务 2 执行了一个插入操作，之后系统执行了一次检查点操作。当检查点操作之后，事务 1 提交了。
 事务 3 执行了删除操作，最后系统故障。
 
 
-\begin{figure}
+\begin{table}
     \centering
-    \includegraphics[width=1\linewidth]{figures/log_entry.pdf}
     \caption{WAL 示例}
-    \label{fig:wal}
-\end{figure}
+    \begin{tabular}{lllll}
+        \toprule
+        日志序列码 & 事务 ID & 操作       & 重做数据 & 回滚数据 \\
+        \midrule
+        1          & 1       & 更新记录 A & $A_1$    & $A_0$    \\
+        2          & 1       & 更新记录 B & $B_1$    & $B_0$    \\
+        3          & 2       & 插入记录 C & $C_0$    &          \\
+        4          &         & 检查点     &          &          \\
+        5          & 1       & 提交       &          &          \\
+        6          & 3       & 删除 A     &          & $A_1$    \\
+                   &         & 系统故障   &          &          \\
+        \bottomrule
+    \end{tabular}
+    \label{tab:wal}
+\end{table}
 
 \subsection{基于预写日志的事务运行时流程}
 
@@ -429,16 +441,6 @@ Andy 等人对于三种途径进行过性能对比测试\cite{mvcc_evaluation}�
 
 日志文件记录了事务的操作，而数据库可以根据日志文件进行数据恢复。
 ARIES 是最主流的基于预写日志的数据恢复方法。ARIES 最早于 1999 年由 C.Mohan 所提出\cite{mohan_aries_1992}。
-
-\begin{figure}
-    \centering
-    \includegraphics[width=1\linewidth]{example-image-a.pdf}
-    \caption{ARIES 恢复流程}
-    \label{fig:ARIES}
-\end{figure}
-
-
-图~\ref{fig:ARIES} 中展示了简化的 ARIES 的恢复流程以及各个流程涉及的日志条目范围。
 ARIES 的数据恢复流程可以分为三个阶段，分别是分析，重做以及回滚。
 
 \textbf{分析阶段：}重启之后首先扫描最新的日志文件，直到找到最新的一个检查点。之后系统会记录所有在检查点至系统故障时时处于活跃的事务信息，以及这些事务相关操作。
