@@ -3,65 +3,66 @@
 % 中英文摘要和关键字
 
 \begin{abstract}
-  传统的数据库采用内存-持久化介质的双层架构。
-  数据库的数据有两份拷贝，一份在内存中作为高速的缓存，一份在持久化介质上以保证数据非易失性。
-  传统数据库的性能受限于双层介质之间的数据同步开销以及数据管理开销。
+    传统的数据库采用内存-非易失性介质的双层架构。
+    数据库的数据有两份拷贝，一份在内存中作为高速的缓存，一份在非易失性介质上以保证数据非易失性。
+    传统数据库的性能受限于双层介质之间的数据同步开销以及数据管理开销。
 
-  非易失性内存（Non-volatile memory, NVM）是一种新的存储介质。
-  NVM ，同时其访问延迟与 DRAM 处于同一个数量级。
-  NVM 硬件技术的商业化给数据库研究提供了新的方向，即采用单层存储架构。
-  单层架构的数据库管理系统能够减少数据同步的开销，并使系统运行无日志化。
+    非易失性内存（Non-Volatile Memory, NVM）是一种新的存储介质。
+    NVM 支持字节寻址以及数据非易失性，同时其访问延迟与 DRAM 处于同一个数量级。
+    NVM 硬件技术的商业化给数据库研究提供了新的方向，即采用单层存储架构。
+    单层架构的数据库管理系统能够减少数据同步的开销，并使系统运行无日志化。
 
-  然而无日志的前提给数据库的垃圾回收机制以及数据恢复机制带来了挑战。
-  在无日志的前提下，数据管理无法保证分配空间以及使用空间的原子性，会造成持久化的内存泄漏问题。
-  另一方面，数据库管理系统需要在保证事务的原子性以及持久化，
-  而日志文件记录了事务的操作。因此在恢复阶段，系统难以在无日志的前提下消除未提交事务的造成的片面影响。
+    然而无日志的前提给数据库的垃圾回收机制以及数据恢复机制带来了挑战。
+    垃圾回收需要回收未被使用的空间。
+    然而在无日志的前提下，数据管理无法保证分配空间以及使用空间的原子性，会造成持久化的内存泄漏问题。
+    另一方面，数据库管理系统需要保证事务的原子性以及持久化，
+    而日志文件记录了事务的操作。因此在恢复阶段，系统难以在无日志的前提下消除未提交事务的造成的片面影响。
 
-  基于现有 NVM 工作的设计思路，本文设计了不基于日志系统的垃圾回收机制以及数据恢复机制。
-  本文的主要贡献如下：
-  \begin{enumerate}
-    \item 本文采用了事务粒度的垃圾回收机制。在系统运行时，垃圾回收机制会尽可能地回收事务产生不可见的数据结构，以提高 NVM 存储空间的利用率。在恢复阶段，垃圾回收会回收潜在的内存泄漏的存储空间。
-    \item 本文了结合了无日志的 NVM 分配器的设计思路，设计出第一个不基于日志的数据库恢复机制。本文通过设计 NVM 上数据结构来保证数据恢复时 NVM 数据的可读性。通过设计关键数据结构的可见性判断，系统能够在保证数据库 ACID 特性的前提下花费较低开销恢复到正常工作状态。
-    \item 本文在 Intel Optane DC PMM 环境下测试了了两种机制的效果。实验表明，垃圾回收机制能够在至多降低 $10\%$ 的运行时性能的前提下，帮助系统节约至多 $67\%$ 的存储空间。同时与 InnoDB 的恢复性能对比实验表明，本文所提出的无日志数据恢复机制的恢复时间十分迅速，1.5 GB 左右的记录数据仅需要 0.85s 就能恢复成功。同时该恢复时间比基于写前日志的 InnoDB 的恢复时间低至多三个数量级。并且该数据恢复机制所使用的存储空间仅仅是 InnoDB 的一半。
-  \end{enumerate}
+    基于现有 NVM 工作的设计思路，本文设计了不基于日志系统的垃圾回收机制以及数据恢复机制。
+    本文的主要贡献如下：
+    \begin{enumerate}
+        \item 本文采用了事务粒度的垃圾回收机制。在系统运行时，垃圾回收机制会尽可能地回收事务产生不可见的数据结构，以提高 NVM 存储空间的利用率。在恢复阶段，垃圾回收机制会回收泄漏的存储空间。
+        \item 本文了结合了无日志的 NVM 分配器的设计思路，设计出第一个不基于日志的数据库恢复机制。本文通过设计 NVM 上数据结构来保证数据恢复时 NVM 数据的可读性。通过设计关键数据结构的可见性判断，系统能够在保证数据库 ACID 特性的前提下花费较低开销恢复到正常工作状态。
+        \item 本文在 Intel Optane DC PMM 环境下测试了两种机制的效果。实验表明，垃圾回收机制能够在至多降低 $10\%$ 的运行时性能的前提下，帮助系统节约至多 $67\%$ 的存储空间。同时与 InnoDB 的恢复性能对比实验表明，本文所提出的无日志数据恢复机制的恢复时间十分迅速，1.5 GB 左右的记录数据仅需要 0.85 s 就能恢复成功。同时该恢复时间比基于写前日志的 InnoDB 的恢复时间低至多三个数量级。并且该数据恢复机制所使用的存储空间仅仅是 InnoDB 的一半。
+    \end{enumerate}
 
-  % 关键词用“英文逗号”分隔，输出时会自动处理为正确的分隔符
-  \thusetup{
-    keywords = {非易失性内存, 数据库管理系统, 垃圾回收, 数据恢复, 日志},
-  }
+    % 关键词用“英文逗号”分隔，输出时会自动处理为正确的分隔符
+    \thusetup{
+        keywords = {非易失性内存, 数据库管理系统, 垃圾回收, 数据恢复, 日志},
+    }
 \end{abstract}
 
 \begin{abstract*}
-  Traditional database management system(DBMS) uses a two-layer storage architecture.
-  There are two copies of the record data, one in memory as a high-speed buffer and one in non-volatile storage to ensure data durability.
-  The data synchronization overhead between the two storage and the complexity of data management are the bottlenecks of traditional databases.
+    Traditional database management system (DBMS) uses a two-layer storage architecture.
+    There are two copies of the record data, one in memory as a high-speed buffer and one in non-volatile storage to ensure data durability.
+    The data synchronization overhead between the two storage and the complexity of data management are the bottlenecks of traditional databases.
 
-  Non-volatile memory(NVM) supports byteaddressable memory access which is similar to DRAM, while at the same time, NVM can keep the
-  in-memory data persistent like disks.
-  The commercialization of NVM has provided a new direction for database research, namely the adoption of a single-layer storage architecture.
-  A single-layer architecture for database management systems can reduce the overhead of data synchronization and make the system run without logging.
+    Non-volatile memory (NVM) supports byte-addressable memory access which is similar to DRAM, while at the same time, NVM can keep the
+    in-memory data persistent like disks.
+    The commercialization of NVM has provided a new direction for database research, namely the adoption of single-layer storage architecture.
+    A single-layer architecture for database management systems can reduce the overhead of data synchronization and make the system run without logging.
 
-  However, the log-freedom property poses a challenge to garbage collection  and data recovery of DBMS.
-  With no logs, data management cannot guarantee the atomicity of memory allocation, which can lead to memory leaks.
-  The memory leaks on NVM is persistent and is harmful to DBMS.
-  On the other hand, the DBMS needs to ensure the atomicity and durability of transactions during the data recovery phase.
-  The log file records the operation of the transaction. Thus, it is difficult for the system to eliminate the partial effects of uncommitted transactions without logging.
+    However, the log-freedom property poses a challenge to garbage collection  and data recovery of DBMS.
+    With no logs, data management cannot guarantee the atomicity of memory allocation, which can lead to memory leaks.
+    The memory leaks on NVM are persistent and are harmful to DBMS.
+    On the other hand, the DBMS needs to ensure the atomicity and durability of transactions during the data recovery phase.
+    The log file records the operation of the transaction. Thus, it is difficult for the system to eliminate the partial effects of uncommitted transactions without logging.
 
-  Based on the design choices of existing NVM works, this paper presents garbage collection and data recovery for a log-freedom NVM-based DBMS.
-  The main contributions of this paper are as follow:
+    Based on the design choices of existing NVM works, this paper presents garbage collection and data recovery for a log-freedom NVM-based DBMS.
+    The main contributions of this paper are as follow:
 
-  \begin{enumerate}
-    \item This paper presents a transaction-level garbage collection which enables the DBMS to reclaim invisible data structures as soon as possible and saves NVM space. In the data recovery phase, the garbage collection reclaims the storage space to avoid potential memory leaks.
-    \item This paper presents the first log-freedom data recovery mechanism which is based on the design choice of log-freedom NVM allocator.This paper ensures the readability of NVM data after reboot by designing the data structure on NVM. This paper also proposes visibility rules for key data structures. The rules enables the system to go back to work with less overhead while ensuring ACID properties.
-    \item  This paper evaluate garbage collection and data recovery on Intel Optane DC PMM. The evaluation show that Enabling garbage collection results in up to
-          10\% performance degradation, but saves up to 67\% storage space. Besides, our data recovery requires only 0.2\%
-          of the time and half of the storage space of InnoDB.
+    \begin{enumerate}
+        \item This paper presents a transaction-level garbage collection that enables the DBMS to reclaim invisible data structures as soon as possible and saves NVM space. In the data recovery phase, the garbage collection reclaims the storage space to avoid potential memory leaks.
+        \item This paper presents the first log-freedom data recovery mechanism which is based on the design choice of log-freedom NVM allocator. This paper ensures the readability of NVM data after reboot by designing the data structure on NVM. This paper also proposes visibility rules for key data structures. The rules enable the system to go back to work with less overhead while ensuring ACID properties.
+        \item  This paper evaluates garbage collection and data recovery on Intel Optane DC PMM. The evaluation shows that enabling garbage collection results in up to
+              10\% performance degradation, but saves up to 67\% storage space. Besides, our data recovery requires only 0.2\%
+              of the time and half of the storage space of InnoDB.
 
-  \end{enumerate}
+    \end{enumerate}
 
 
-  % Use comma as seperator when inputting
-  \thusetup{
-    keywords* = {Non-volatile memory, database management system, garbage collection, data recovery, log},
-  }
+    % Use comma as seperator when inputting
+    \thusetup{
+        keywords* = {Non-volatile memory, database management system, garbage collection, data recovery, log},
+    }
 \end{abstract*}
